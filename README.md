@@ -152,10 +152,10 @@ Aura/
 
 ```mermaid
 flowchart LR
-    RAW_REVIEWS["Raw Reviews<br/>Home_and_Kitchen.jsonl.gz"] --> PARQUET_REVIEWS["Parquet Conversion<br/>Home_and_Kitchen.parquet"]
-    RAW_META["Raw Metadata<br/>meta_Home_and_Kitchen.jsonl.gz"] --> PARQUET_META["Parquet Conversion<br/>meta_Home_and_Kitchen.parquet"]
+    RAW_REVIEWS["Raw Reviews / Home_and_Kitchen.jsonl.gz"] --> PARQUET_REVIEWS["Parquet Conversion / Home_and_Kitchen.parquet"]
+    RAW_META["Raw Metadata / meta_Home_and_Kitchen.jsonl.gz"] --> PARQUET_META["Parquet Conversion / meta_Home_and_Kitchen.parquet"]
 
-    PARQUET_REVIEWS -->|Seeded frac sample<br/>(1%,5%,15%,30%)| STOCHASTIC_SAMPLE["Verified Review Samples"]
+    PARQUET_REVIEWS -->|Seeded frac sample (1%,5%,15%,30%)| STOCHASTIC_SAMPLE["Verified Review Samples"]
     STOCHASTIC_SAMPLE -->|verified_purchase filter| VERIFIED_ONLY["Verified Interactions"]
     VERIFIED_ONLY -->|k_user = k_item = 5| KCORE["K-core Reviews"]
     KCORE -->|optional target_rows cap| ROW_CAP["Downsampled K-core"]
@@ -164,7 +164,7 @@ flowchart LR
     ROW_CAP --> MERGE["Left Merge on parent_asin"]
     META_FILTER --> MERGE
 
-    MERGE --> FINAL["core_hk_reviews_with_meta_sample_30pct.parquet<br/>+ stats JSON"]
+    MERGE --> FINAL["core_hk_reviews_with_meta_sample_30pct.parquet + stats JSON"]
 ```
 
 ---

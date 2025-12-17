@@ -127,8 +127,71 @@ Aura/
 
 ---
 
+##  Data Assets for Sampling
+
+- `Home_and_Kitchen.jsonl.gz` / `meta_Home_and_Kitchen.jsonl.gz` - raw Amazon review and metadata dumps (>8B rows combined).
+- `Home_and_Kitchen.parquet` / `meta_Home_and_Kitchen.parquet` - columnar conversions that keep schema parity with the raw dumps while enabling fast predicate pushdown.
+- `Home_and_Kitchen_verified_sample_{1,5,15,30}pct_seed42.parquet` - progressively larger stochastic subsets (`pandas.DataFrame.sample(frac=?, random_state=42)`) used for debugging and profiling the filters.
+- `core_hk_reviews_with_meta_sample_30pct.parquet` plus `_stats.json` - recommender-ready artifact produced by `sampling_file.py` after all filters, merges, and logging complete.
+
+---
+
+##  Sampling & Reduction Strategy
+
+1. **Columnar conversion** - Convert both review and metadata JSONL streams to Parquet once so every downstream job benefits from compression and vectorized IO.
+2. **Seeded frac sampling** - Generate 1%, 5%, 15%, and 30% review subsets (seed 42) to iterate quickly while approximating the full distribution.
+3. **Verified-only enforcement** - Keep only rows with `verified_purchase == True` to reduce spam and align train/test distributions.
+4. **K-core pruning** - Apply `k_user = k_item = 5` (tunable via CLI) so each user and ASIN has at least five interactions, creating denser matrices for MF/NN models.
+5. **Optional deterministic downsample** - If `--target_rows` is provided (default 100k), run a seeded sample on the k-core output to stay within hardware limits without sacrificing reproducibility.
+6. **Metadata alignment & dedupe** - Filter metadata to only the surviving `parent_asin` values and drop duplicates so a single, authoritative set of attributes accompanies each product.
+7. **Merge + stats logging** - Left join reviews with filtered metadata, emit the merged Parquet, and save `_stats.json` capturing user/item counts, sparsity, and interaction quantiles for quick QA.
+
+---
+
+##  Data Pipeline Architecture
+
+```mermaid
+flowchart LR
+    RAW_REVIEWS["Raw Reviews<br/>Home_and_Kitchen.jsonl.gz"] --> PARQUET_REVIEWS["Parquet Conversion<br/>Home_and_Kitchen.parquet"]
+    RAW_META["Raw Metadata<br/>meta_Home_and_Kitchen.jsonl.gz"] --> PARQUET_META["Parquet Conversion<br/>meta_Home_and_Kitchen.parquet"]
+
+    PARQUET_REVIEWS -->|Seeded frac sample<br/>(1%,5%,15%,30%)| STOCHASTIC_SAMPLE["Verified Review Samples"]
+    STOCHASTIC_SAMPLE -->|verified_purchase filter| VERIFIED_ONLY["Verified Interactions"]
+    VERIFIED_ONLY -->|k_user = k_item = 5| KCORE["K-core Reviews"]
+    KCORE -->|optional target_rows cap| ROW_CAP["Downsampled K-core"]
+
+    PARQUET_META --> META_FILTER["Filter to surviving parent_asin + dedupe"]
+    ROW_CAP --> MERGE["Left Merge on parent_asin"]
+    META_FILTER --> MERGE
+
+    MERGE --> FINAL["core_hk_reviews_with_meta_sample_30pct.parquet<br/>+ stats JSON"]
+```
+
+---
+
+##  Running `sampling_file.py`
+
+```powershell
+python sampling_file.py `
+  --reviews_parquet Home_and_Kitchen_verified_sample_30pct_seed42.parquet `
+  --meta_parquet meta_Home_and_Kitchen.parquet `
+  --out_parquet core_hk_reviews_with_meta_sample_30pct.parquet `
+  --k_user 5 `
+  --k_item 5 `
+  --target_rows 100000 `
+  --verified_only
+```
+
+- `--reviews_parquet` / `--meta_parquet`: point to any of the raw or sampled Parquet assets.
+- `--k_user` and `--k_item`: adjust the minimum interaction thresholds for the k-core filter.
+- `--target_rows`: set to `None` to retain the full k-core output, or keep the default (100k) for faster iterations.
+- `--keep_review_cols`: extend the default (`rating`, `timestamp`, `title`, `text`, `verified_purchase`) when additional features are required.
+- Script output includes tqdm step tracking, post-stage shape summaries, the merged Parquet, and an auto-generated `_stats.json` for documentation.
+
+---
+
 ##  License
-TBD — Likely open-source (MIT or Apache 2.0) for academic and research use.
+TBD - Likely open-source (MIT or Apache 2.0) for academic and research use.
 
 ---
 
